@@ -21,6 +21,7 @@ public enum CommonErrorCode implements ErrorCode {
     FORBIDDEN(40300, "没有访问权限"),
     NOT_FOUND(40400, "请求的资源不存在"),
     CONFLICT(40900, "相同请求正在处理中，请稍后重试"),
+    OPTIMISTIC_LOCK(40901, "数据已被其他请求修改，请刷新后重试"),
     FILE_TOO_LARGE(41300, "上传文件超过大小限制"),
     UNSUPPORTED_MEDIA_TYPE(41500, "不支持的媒体类型"),
     TOO_MANY_REQUESTS(42900, "请求过于频繁，请稍后重试"),

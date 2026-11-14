@@ -3,6 +3,9 @@ dependencies {
     api 'io.quarkus:quarkus-rest'
     api 'io.quarkus:quarkus-rest-jackson'
     api 'io.quarkus:quarkus-hibernate-validator'
+    // 仅用于把数据库乐观锁异常映射为 409，不引入 JPA 实现
+    api 'jakarta.persistence:jakarta.persistence-api'
+    api 'jakarta.transaction:jakarta.transaction-api'
     testImplementation 'io.rest-assured:rest-assured'
     // 仅测试用：验证校验注解文案的按请求语言解析
     testImplementation project(':quarkforge-validation')

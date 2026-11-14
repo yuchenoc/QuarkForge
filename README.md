@@ -19,7 +19,7 @@ A modular rapid microservice development framework based on Quarkus, with built-
 | `quarkforge-web` | Web layer | Global exception mapping, automatic response wrapping, `@RawResponse` exemption, access log with traceId, `PageQuery` pagination parameters, file upload/download, API versioning |
 | `quarkforge-gateway` | API gateway | In-process reverse proxy with declarative routes, longest-prefix matching, prefix stripping, timeouts, and unified 502/504 `Result` bodies |
 | `quarkforge-validation` | Parameter validation | Business-oriented Bean Validation annotations: `@Phone`, `@IdCard`, `@BankCard`, `@PasswordStrength`, `@EnumValid` |
-| `quarkforge-data` | Data access | `BaseEntity` (snowflake ID + audit timestamps), `BaseRepository` (pagination straight to `PageResult`), `TenantEntity` multi-tenant auto-filtering, `SoftDeleteEntity`/`SoftDeleteRepository` soft delete with recycle bin, `AuditSupport` audit SPI |
+| `quarkforge-data` | Data access | `BaseEntity` (snowflake ID + audit timestamps), `BaseRepository` (pagination straight to `PageResult`), `TenantEntity` multi-tenant auto-filtering, `SoftDeleteEntity`/`SoftDeleteRepository` soft delete with recycle bin, `VersionedEntity` optimistic locking (`@Version`), `AuditSupport` audit SPI |
 | `quarkforge-audit` | Audit logging | Automatically records create/update/delete operations with field-level diffs on updates (e.g. price 100 → 120), `AuditLog` persistence, operator resolution, security events (login success/failure, logout, token revocation, access denied), `@OperationLog` method-level operation logs |
 | `quarkforge-crypto` | Encryption & masking | AES-256-GCM `CryptoService`, `EncryptedStringConverter` field encryption, `@Sensitive` response masking (`138****0000`) |
 | `quarkforge-cache` | Local cache | `CacheService` SPI, Caffeine default implementation, `@Cacheable`/`@CacheEvict`/`@CachePut` annotations, `@CacheWarmup` startup preloading, built-in Bloom-filter penetration guard and single-flight breakdown guard |
@@ -296,7 +296,15 @@ article.delete();                              // Only sets the flag; hidden fro
 articleRepository.findAllIncludingDeleted();   // Recycle bin
 articleRepository.restoreById(id);             // Restore
 articleRepository.purgeById(id);               // Physical delete
+
+// Extend VersionedEntity for optimistic locking (@Version)
+@Entity
+public class Account extends VersionedEntity {
+    public BigDecimal balance;
+}
 ```
+
+`VersionedEntity` adds a `version` column that increments on every successful update. Concurrent updates with a stale version throw `OptimisticLockException`, which the web layer maps to HTTP 409 / error code `40901` (localized via `error.40901`). Entities extending `BaseEntity` directly keep their original schema and are not versioned.
 
 When no tenant is set explicitly, the default tenant `default` is used (`quarkforge.data.tenant.default`). The request entry point can call `TenantContext.set(...)` to propagate the tenant according to the project's authentication scheme.
 
