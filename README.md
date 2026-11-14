@@ -22,7 +22,7 @@ A modular rapid microservice development framework based on Quarkus, with built-
 | `quarkforge-data` | Data access | `BaseEntity` (snowflake ID + audit timestamps), `BaseRepository` (pagination straight to `PageResult`), `TenantEntity` multi-tenant auto-filtering, `SoftDeleteEntity`/`SoftDeleteRepository` soft delete with recycle bin, `AuditSupport` audit SPI |
 | `quarkforge-audit` | Audit logging | Automatically records create/update/delete operations with field-level diffs on updates (e.g. price 100 → 120), `AuditLog` persistence, operator resolution, security events (login success/failure, logout, token revocation, access denied), `@OperationLog` method-level operation logs |
 | `quarkforge-crypto` | Encryption & masking | AES-256-GCM `CryptoService`, `EncryptedStringConverter` field encryption, `@Sensitive` response masking (`138****0000`) |
-| `quarkforge-cache` | Local cache | `CacheService` SPI, Caffeine default implementation, `@Cacheable`/`@CacheEvict` annotations, `@CacheWarmup` startup preloading, built-in Bloom-filter penetration guard and single-flight breakdown guard |
+| `quarkforge-cache` | Local cache | `CacheService` SPI, Caffeine default implementation, `@Cacheable`/`@CacheEvict`/`@CachePut` annotations, `@CacheWarmup` startup preloading, built-in Bloom-filter penetration guard and single-flight breakdown guard |
 | `quarkforge-dict` | Dictionary & metadata | Multi-tenant dict types/items, cached lookups, value→label translation, hierarchical dictionaries via `parentValue` |
 | `quarkforge-excel` | Excel / CSV import & export | Streaming xlsx/CSV reading, row-level validation with error rows, SXSSF streaming export, REST upload/download helpers |
 | `quarkforge-migration` | Database migration | Flyway starter that automatically runs versioned scripts under `db/migration` at application startup |
@@ -445,7 +445,15 @@ public User getUser(long id) { ... }
 
 @CacheEvict(key = "#p0", namespace = "user")          // after method success
 public void updateUser(long id, UserPatch patch) { ... }
+
+@CachePut(key = "#p0", namespace = "user", ttl = "PT10M")   // always executes, then refreshes cache
+public User updateUser(long id, UserPatch patch) { ... }
+
+@CachePut(key = "'user:code:' + #result.code")              // key derived from the return value
+public User updateByCode(String code, UserPatch patch) { ... }
 ```
+
+`@Cacheable` skips the method on a cache hit, while `@CachePut` always executes the method and writes the result back — use it for updates so the cache never keeps stale data. Null results and exceptions skip the write.
 
 Supported key expressions inside the annotation (no SpEL dependency):
 
@@ -456,6 +464,7 @@ Supported key expressions inside the annotation (no SpEL dependency):
 | `#p0.field` | Bean property of the argument |
 | `#p0.method()` | Zero-arg method on the argument |
 | `#root.methodName` | Name of the annotated method |
+| `#result`, `#result.id` | Return value / its properties (`@CachePut` only, resolved after invocation) |
 | `'prefix/' + #p0` | Concatenation (split on `+` and rejoin) |
 | (empty) | Default = `ClassName#methodName(args)` |
 
