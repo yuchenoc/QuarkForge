@@ -32,8 +32,8 @@ A modular rapid microservice development framework based on Quarkus, with built-
 | `quarkforge-degrade` | Fault tolerance | SmallRye FT `@Retry`/`@CircuitBreaker`/`@Timeout`/`@Bulkhead`/`@Fallback`, circuit-open/timeout/bulkhead exceptions mapped to unified `Result` (503/504) |
 | `quarkforge-idempotency` | Idempotency | `@Idempotent` annotation, expression-based idempotency keys, cached result replay, `IdempotentStore` SPI (in-memory default / Redis auto-takeover) |
 | `quarkforge-messaging` | Message pub/sub | `MessageEnvelope` message envelope, `MessagePublisher` SPI, `JsonMessagePublisher` direct object publishing, `@MessageConsumer` + `MessageHandler` consumer abstraction (local in-JVM dispatch by default) |
-| `quarkforge-messaging-rabbitmq` | RabbitMQ | Exchange declaration, routing-key delivery, persistent messages, optional publisher confirms, consumer with durable queues and manual ack/nack |
-| `quarkforge-messaging-kafka` | Kafka | Kafka transport for messaging: topic delivery with messageId as record key, headers/timestamp mapping, per-topic consumer group with manual offset commit |
+| `quarkforge-messaging-rabbitmq` | RabbitMQ | Exchange declaration, routing-key delivery, persistent messages, optional publisher confirms, consumer concurrency and prefetch, exponential-backoff retry with dead-letter queue |
+| `quarkforge-messaging-kafka` | Kafka | Kafka transport for messaging: topic delivery with messageId as record key, headers/timestamp mapping, per-topic consumer group with manual offset commit, exponential-backoff retry, dead-letter topic, consumer concurrency and max-poll-records, idempotent producer switch |
 | `quarkforge-outbox` | Transactional outbox | Local message table, delayed delivery, exponential-backoff retry on failure, scheduled redelivery |
 | `quarkforge-outbox-admin` | Outbox admin | Query failed outbox messages, replay one message, condition-based batch replay (admin role required) |
 | `quarkforge-rpc` | RPC communication | gRPC infrastructure: `BizException` ↔ gRPC status mapping with error-code trailers, traceId propagation interceptors, built-in `Echo` diagnostics service |
@@ -786,6 +786,38 @@ For Kafka, add `quarkforge-messaging-kafka` instead; `destination` becomes the t
 ```properties
 quarkforge.messaging.kafka.bootstrap-servers=localhost:9092
 quarkforge.messaging.kafka.group-id=order-service
+```
+
+#### Reliability: retry, dead letter, concurrency
+
+Both transports share one retry policy (exponential backoff) and route messages that keep failing to a dead-letter destination (`destination + dlq-suffix`):
+
+```properties
+quarkforge.messaging.retry.max-retries=3
+quarkforge.messaging.retry.initial-backoff=500ms
+quarkforge.messaging.retry.multiplier=2.0
+quarkforge.messaging.retry.max-backoff=10s
+quarkforge.messaging.dlq-suffix=.dlq
+```
+
+After the retries are exhausted, the message is published to `order.created.dlq` (RabbitMQ: queue `quarkforge.order.created.dlq`) with extra headers `x-original-topic`, `x-error` and `x-failed-at`, then acknowledged so it no longer blocks the partition/queue. Dead-letter publishing is atomic with acknowledgement: if it fails, the message is not acknowledged (Kafka) or is requeued (RabbitMQ).
+
+Consumer throughput:
+
+```properties
+# Kafka: consumers per topic and records per poll
+quarkforge.messaging.kafka.concurrency=2
+quarkforge.messaging.kafka.max-poll-records=500
+
+# RabbitMQ: consumers per queue and unacknowledged prefetch limit
+quarkforge.messaging.rabbitmq.concurrency=2
+quarkforge.messaging.rabbitmq.prefetch=20
+```
+
+Kafka producers can enable idempotent delivery (forces `acks=all`, deduplicates retries on the broker):
+
+```properties
+quarkforge.messaging.kafka.idempotence=true
 ```
 
 ### Transactional Outbox (outbox)

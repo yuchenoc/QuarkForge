@@ -33,8 +33,12 @@ import java.util.concurrent.CompletionStage;
 ///
 /// ```properties
 /// quarkforge.messaging.kafka.bootstrap-servers=localhost:9092
-/// quarkforge.messaging.kafka.acks=1        # all 更可靠、吞吐略降
+/// quarkforge.messaging.kafka.acks=1                 # all 更可靠、吞吐略降
+/// quarkforge.messaging.kafka.idempotence=false      # 开启后强制 acks=all，broker 端去重
 /// ```
+///
+/// 开启 `idempotence` 后生产者会附加 `producer id` 与序列号，重试不会产生重复消息，
+/// 需要 broker `enable.idempotence` 能力（Kafka 0.11+ 默认支持）。
 @ApplicationScoped
 public class KafkaMessagePublisher implements MessagePublisher {
 
@@ -49,6 +53,9 @@ public class KafkaMessagePublisher implements MessagePublisher {
     @ConfigProperty(name = "quarkforge.messaging.kafka.acks", defaultValue = "1")
     String acks;
 
+    @ConfigProperty(name = "quarkforge.messaging.kafka.idempotence", defaultValue = "false")
+    boolean idempotence;
+
     private KafkaProducer<String, String> producer;
 
     @PostConstruct
@@ -57,10 +64,14 @@ public class KafkaMessagePublisher implements MessagePublisher {
         config.put("bootstrap.servers", bootstrapServers);
         config.put("key.serializer", StringSerializer.class.getName());
         config.put("value.serializer", StringSerializer.class.getName());
-        config.put("acks", acks);
+        config.put("acks", idempotence ? "all" : acks);
+        if (idempotence) {
+            config.put("enable.idempotence", "true");
+        }
         config.put("client.id", "quarkforge-producer");
         producer = KafkaProducer.create(vertx, config);
-        LOG.infof("Kafka 生产者已就绪 bootstrap=%s acks=%s", bootstrapServers, acks);
+        LOG.infof("Kafka 生产者已就绪 bootstrap=%s acks=%s idempotence=%s",
+                bootstrapServers, idempotence ? "all" : acks, idempotence);
     }
 
     @Override
