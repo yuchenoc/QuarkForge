@@ -15,11 +15,11 @@ A modular rapid microservice development framework based on Quarkus, with built-
 | Module | Responsibility | Core Contents |
 |--------|----------------|---------------|
 | `quarkforge-bom` | Version alignment | Single import that locks the Quarkus platform and all framework module versions |
-| `quarkforge-core` | Infrastructure (pure JDK, no framework dependencies) | `Result` unified response body, `ErrorCode` error codes, `BizException`, `PageResult`, `Checks` validation, `SnowflakeIdGenerator` |
+| `quarkforge-core` | Infrastructure (pure JDK, no framework dependencies) | `Result` unified response body, `ErrorCode` error codes, `BizException`, `PageResult`, `CursorPage`, `Checks` validation, `SnowflakeIdGenerator` |
 | `quarkforge-web` | Web layer | Global exception mapping, automatic response wrapping, `@RawResponse` exemption, access log with traceId, `PageQuery` pagination parameters, file upload/download, API versioning |
 | `quarkforge-gateway` | API gateway | In-process reverse proxy with declarative routes, longest-prefix matching, prefix stripping, timeouts, and unified 502/504 `Result` bodies |
 | `quarkforge-validation` | Parameter validation | Business-oriented Bean Validation annotations: `@Phone`, `@IdCard`, `@BankCard`, `@PasswordStrength`, `@EnumValid` |
-| `quarkforge-data` | Data access | `BaseEntity` (snowflake ID + audit timestamps), `BaseRepository` (pagination straight to `PageResult`), `TenantEntity` multi-tenant auto-filtering, `SoftDeleteEntity`/`SoftDeleteRepository` soft delete with recycle bin, `VersionedEntity` optimistic locking (`@Version`), `AuditSupport` audit SPI |
+| `quarkforge-data` | Data access | `BaseEntity` (snowflake ID + audit timestamps), `BaseRepository` (offset pagination to `PageResult`, keyset/cursor pagination to `CursorPage`), `TenantEntity` multi-tenant auto-filtering, `SoftDeleteEntity`/`SoftDeleteRepository` soft delete with recycle bin, `VersionedEntity` optimistic locking (`@Version`), `AuditSupport` audit SPI |
 | `quarkforge-audit` | Audit logging | Automatically records create/update/delete operations with field-level diffs on updates (e.g. price 100 → 120), `AuditLog` persistence, operator resolution, security events (login success/failure, logout, token revocation, access denied), `@OperationLog` method-level operation logs |
 | `quarkforge-crypto` | Encryption & masking | AES-256-GCM `CryptoService`, `EncryptedStringConverter` field encryption, `@Sensitive` response masking (`138****0000`) |
 | `quarkforge-cache` | Local cache | `CacheService` SPI, Caffeine default implementation, `@Cacheable`/`@CacheEvict`/`@CachePut` annotations, `@CacheWarmup` startup preloading, built-in Bloom-filter penetration guard and single-flight breakdown guard |
@@ -274,6 +274,20 @@ public class UserRepository extends BaseRepository<User> {
 ```
 
 In multi-instance deployments, distinguish snowflake nodes via `quarkforge.data.worker-id`.
+
+#### Keyset / cursor pagination
+
+`OFFSET` gets slower the deeper you page. For infinite scroll or exports, use the built-in cursor pagination:
+
+```java
+CursorPage<User> first = userRepository.findPageAfter("createdAt", false, null, 20);
+CursorPage<User> next = userRepository.findPageAfter("createdAt", false, first.nextCursor(), 20);
+```
+
+- Sorts by the given scalar attribute plus `id` as a unique tiebreaker, so rows with equal values are neither duplicated nor skipped.
+- The cursor is opaque (`base64url(sortValue)|id`) and validated: unknown fields or malformed cursors return error code `40000`.
+- `nextCursor` is `null` and `hasMore` is `false` on the last page; page size is capped at 500.
+- The sort attribute must be non-null and comparable (e.g. `id`, `createdAt`, `name`); associations are rejected.
 
 ### Multi-Tenancy & Soft Delete (data)
 
